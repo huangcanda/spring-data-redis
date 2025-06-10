@@ -19,7 +19,6 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.core.JsonGenerator;
 import tools.jackson.core.JsonParser;
 import tools.jackson.core.Version;
-import tools.jackson.databind.DatabindContext;
 import tools.jackson.databind.DefaultTyping;
 import tools.jackson.databind.DeserializationContext;
 import tools.jackson.databind.DeserializationFeature;
@@ -29,10 +28,11 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.SerializationContext;
 import tools.jackson.databind.ValueDeserializer;
 import tools.jackson.databind.ValueSerializer;
+import tools.jackson.databind.cfg.MapperBuilder;
 import tools.jackson.databind.deser.jdk.JavaUtilCalendarDeserializer;
 import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.json.JsonMapper.Builder;
 import tools.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
-import tools.jackson.databind.jsontype.BasicPolymorphicTypeValidator.TypeMatcher;
 import tools.jackson.databind.module.SimpleDeserializers;
 import tools.jackson.databind.module.SimpleSerializers;
 import tools.jackson.databind.ser.Serializers;
@@ -48,12 +48,13 @@ import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 import java.util.TimeZone;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 import org.springframework.data.mapping.MappingException;
 import org.springframework.data.redis.support.collections.CollectionUtils;
@@ -159,87 +160,25 @@ public class Jackson3HashMapper implements HashMapper<Object, String, Object> {
 			Jackson3HashMapper.class.getClassLoader());
 
 	private final ObjectMapper typingMapper;
-	private final ObjectMapper untypedMapper;
 	private final boolean flatten;
 
-	/**
-	 * Creates new {@link Jackson3HashMapper} with a default {@link ObjectMapper}.
-	 *
-	 * @param flatten boolean used to configure whether JSON de/serialized {@link Object} properties will be un/flattened
-	 *          using {@literal dot notation}, or whether to retain the hierarchical node structure created by Jackson.
-	 */
-	public Jackson3HashMapper(boolean flatten) {
+	public Jackson3HashMapper(
+			Consumer<MapperBuilder<? extends ObjectMapper, ? extends MapperBuilder<?, ?>>> jsonMapperBuilder,
+			boolean flatten) {
+		this(((Supplier<JsonMapper>) () -> {
+			Builder builder = JsonMapper.builder();
+			jsonMapperBuilder.accept(builder);
+			return builder.build();
+		}).get(), flatten);
+	}
 
-		this(JsonMapper.builder().findAndAddModules().addModules(new HashMapperModule())
-				.activateDefaultTypingAsProperty(BasicPolymorphicTypeValidator.builder().allowIfBaseType(Object.class).allowIfSubType(new TypeMatcher() {
-						@Override
-						public boolean match(DatabindContext ctxt, Class<?> clazz) {
-							return true;
-						}
-					}).build(),
-						DefaultTyping.NON_FINAL_AND_ENUMS, "@class")
-			.configure(DeserializationFeature.FAIL_ON_MISSING_EXTERNAL_TYPE_ID_PROPERTY, false)
+	public static void preconfigure(MapperBuilder<? extends ObjectMapper, ? extends MapperBuilder<?, ?>> builder) {
+		builder.findAndAddModules().addModules(new HashMapperModule())
+				.activateDefaultTypingAsProperty(BasicPolymorphicTypeValidator.builder().allowIfBaseType(Object.class)
+						.allowIfSubType((ctx, clazz) -> true).build(), DefaultTyping.NON_FINAL_AND_ENUMS, "@class")
+				.configure(DeserializationFeature.FAIL_ON_MISSING_EXTERNAL_TYPE_ID_PROPERTY, false)
 				.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-				.changeDefaultPropertyInclusion(value -> value.withValueInclusion(Include.NON_NULL)).build(), false);
-
-		//// this(new Supplier<ObjectMapper>() {
-		// @Override
-		// public ObjectMapper get() {
-		//// return JsonMapper.builder()
-		//// .findAndAddModules()
-		//// .configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false)
-		//// .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-		//// .build();
-		// return null;
-		// }
-		// }.get(), false);
-		// this(new ObjectMapper() {
-		//
-		// @Override
-		// protected DeserializationContextExt _deserializationContext(JsonParser p) {
-		// return super._deserializationContext(p);
-		// }
-		//
-		// @Override
-		// protected TypeResolverBuilder<?> _constructDefaultTypeResolverBuilder(DefaultTyping applicability,
-		// PolymorphicTypeValidator typeValidator) {
-		//
-		// return new DefaultTypeResolverBuilder(applicability, typeValidator, ) {
-		//
-		// public boolean useForType(JavaType type) {
-		//
-		// if (type.isPrimitive()) {
-		// return false;
-		// }
-		//
-		// if (flatten && (type.isTypeOrSubTypeOf(Number.class) || type.isEnumType())) {
-		// return false;
-		// }
-		//
-		// if (EVERYTHING.equals(_appliesFor)) {
-		// return !TreeNode.class.isAssignableFrom(type.getRawClass());
-		// }
-		//
-		// return super.useForType(type);
-		// }
-		// };
-		// }
-		// }.findAndRegisterModules(), flatten);
-		// },flatten);
-
-		// this.typingMapper.de.activateDefaultTyping(this.typingMapper.getPolymorphicTypeValidator(),
-		// DefaultTyping.EVERYTHING, As.PROPERTY);
-		// this.typingMapper.configure(SerializationFeature.WRITE_NULL_MAP_VALUES, false);
-		//
-		// if(flatten) {
-		// this.typingMapper.disable(MapperFeature.REQUIRE_TYPE_ID_FOR_SUBTYPES);
-		// }
-		//
-		// // Prevent splitting time types into arrays. E
-		// this.typingMapper.configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false);
-		// this.typingMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-		// this.typingMapper.setSerializationInclusion(Include.NON_NULL);
-		// this.typingMapper.registerModule(new HashMapperModule());
+				.changeDefaultPropertyInclusion(value -> value.withValueInclusion(Include.NON_NULL));
 	}
 
 	/**
@@ -256,10 +195,6 @@ public class Jackson3HashMapper implements HashMapper<Object, String, Object> {
 
 		this.flatten = flatten;
 		this.typingMapper = mapper;
-		this.untypedMapper = new ObjectMapper();
-		// this.untypedMapper.configure(SerializationFeature.WRITE_NULL_MAP_VALUES, false);
-		// this.untypedMapper.setSerializationInclusion(Include.NON_NULL);
-		// this.untypedMapper.findAndRegisterModules();
 	}
 
 	@Override
@@ -267,8 +202,7 @@ public class Jackson3HashMapper implements HashMapper<Object, String, Object> {
 	public Map<String, Object> toHash(Object source) {
 
 		JsonNode tree = this.typingMapper.valueToTree(source);
-
-		return this.flatten ? flattenMap(tree.properties()) : this.untypedMapper.convertValue(tree, Map.class);
+		return this.flatten ? flattenMap(tree.properties()) : JsonMapper.shared().convertValue(tree, Map.class);
 	}
 
 	@Override
@@ -279,13 +213,13 @@ public class Jackson3HashMapper implements HashMapper<Object, String, Object> {
 			if (this.flatten) {
 
 				Map<String, Object> unflattenedHash = doUnflatten(hash);
-				byte[] unflattenedHashedBytes = this.untypedMapper.writeValueAsBytes(unflattenedHash);
+				byte[] unflattenedHashedBytes = JsonMapper.shared().writeValueAsBytes(unflattenedHash);
 				Object hashedObject = this.typingMapper.reader().forType(Object.class).readValue(unflattenedHashedBytes);
 
 				return hashedObject;
 			}
 
-			return this.typingMapper.treeToValue(this.untypedMapper.valueToTree(hash), Object.class);
+			return this.typingMapper.treeToValue(JsonMapper.shared().valueToTree(hash), Object.class);
 
 		} catch (Exception ex) {
 			throw new MappingException(ex.getMessage(), ex);
@@ -295,8 +229,8 @@ public class Jackson3HashMapper implements HashMapper<Object, String, Object> {
 	@SuppressWarnings("unchecked")
 	private Map<String, Object> doUnflatten(Map<String, Object> source) {
 
-		Map<String, Object> result = new LinkedHashMap<>();
-		Set<String> treatSeparate = new LinkedHashSet<>();
+		Map<String, Object> result = org.springframework.util.CollectionUtils.newLinkedHashMap(source.size());
+		Set<String> treatSeparate = org.springframework.util.CollectionUtils.newLinkedHashSet(source.size());
 
 		for (Entry<String, Object> entry : source.entrySet()) {
 
@@ -573,112 +507,4 @@ public class Jackson3HashMapper implements HashMapper<Object, String, Object> {
 			return utc;
 		}
 	}
-
-	// /**
-	// * {@link JsonDeserializer} for {@link Date} objects without considering type hints.
-	// */
-	// private static class UntypedDateDeserializer extends JsonDeserializer<Date> {
-	//
-	// private final JsonDeserializer<?> delegate = new UntypedObjectDeserializer(null, null);
-	//
-	// @Override
-	// public Object deserializeWithType(JsonParser p, DeserializationContext ctxt, TypeDeserializer typeDeserializer)
-	// throws IOException {
-	// return deserialize(p, ctxt);
-	// }
-	//
-	// @Override
-	// public Date deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
-	//
-	// Object value = delegate.deserialize(p, ctxt);
-	//
-	// if (value instanceof Date) {
-	// return (Date) value;
-	// }
-	//
-	// try {
-	// return ctxt.getConfig().getDateFormat().parse(value.toString());
-	// } catch (ParseException ignore) {
-	// return new Date(NumberUtils.parseNumber(value.toString(), Long.class));
-	// }
-	// }
-	// }
-	//
-	// /**
-	// * {@link JsonDeserializer} for {@link Calendar} objects without considering type hints.
-	// */
-	// private static class UntypedCalendarDeserializer extends JsonDeserializer<Calendar> {
-	//
-	// private final UntypedDateDeserializer dateDeserializer = new UntypedDateDeserializer();
-	//
-	// @Override
-	// public Object deserializeWithType(JsonParser p, DeserializationContext ctxt, TypeDeserializer typeDeserializer)
-	// throws IOException {
-	// return deserialize(p, ctxt);
-	// }
-	//
-	// @Override
-	// public Calendar deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
-	//
-	// Date date = dateDeserializer.deserialize(p, ctxt);
-	//
-	// if (date != null) {
-	// Calendar calendar = Calendar.getInstance();
-	// calendar.setTime(date);
-	// return calendar;
-	// }
-	//
-	// return null;
-	// }
-	// }
-	//
-	// /**
-	// * Untyped {@link JsonSerializer} to serialize plain values without writing JSON type hints.
-	// *
-	// * @param <T>
-	// */
-	// private static class UntypedSerializer<T> extends JsonSerializer<T> {
-	//
-	// private final JsonSerializer<T> delegate;
-	//
-	// UntypedSerializer(JsonSerializer<T> delegate) {
-	// this.delegate = delegate;
-	// }
-	//
-	// @Override
-	// public void serializeWithType(T value, JsonGenerator jsonGenerator, SerializerProvider serializers,
-	// TypeSerializer typeSerializer) throws IOException {
-	//
-	// serialize(value, jsonGenerator, serializers);
-	// }
-	//
-	// @Override
-	// public void serialize(@Nullable T value, JsonGenerator jsonGenerator, SerializerProvider serializers)
-	// throws IOException {
-	//
-	// if (value != null) {
-	// delegate.serialize(value, jsonGenerator, serializers);
-	// } else {
-	// serializers.defaultSerializeNull(jsonGenerator);
-	// }
-	// }
-	// }
-	//
-	// private static class DateToTimestampSerializer extends DateSerializer {
-	//
-	// // Prevent splitting to array.
-	// @Override
-	// protected boolean _asTimestamp(SerializerProvider serializers) {
-	// return true;
-	// }
-	// }
-	//
-	// private static class CalendarToTimestampSerializer extends CalendarSerializer {
-	//
-	// // Prevent splitting to array.
-	// @Override
-	// protected boolean _asTimestamp(SerializerProvider serializers) {
-	// return true;
-	// }
-	// }
 }

@@ -15,6 +15,8 @@
  */
 package org.springframework.data.redis.mapping;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.LocalDate;
@@ -46,9 +48,12 @@ import org.springframework.data.redis.hash.Jackson3HashMapper;
 public abstract class Jackson3HashMapperUnitTests extends AbstractHashMapperTests {
 
 	private final Jackson3HashMapper mapper;
+	private final Jackson2HashMapper legacyMapper;
 
-	public Jackson3HashMapperUnitTests(Jackson3HashMapper mapper) {
+	public Jackson3HashMapperUnitTests(Jackson3HashMapper mapper, Jackson2HashMapper legacyMapper) {
+
 		this.mapper = mapper;
+		this.legacyMapper = legacyMapper;
 	}
 
 	protected Jackson3HashMapper getMapper() {
@@ -59,6 +64,21 @@ public abstract class Jackson3HashMapperUnitTests extends AbstractHashMapperTest
 	@SuppressWarnings("rawtypes")
 	protected <T> HashMapper mapperFor(Class<T> t) {
 		return getMapper();
+	}
+
+	protected void assertBackAndForwardMapping(Object o) {
+
+		super.assertBackAndForwardMapping(o);
+		assertLegacyMapperCompatibility(o);
+	}
+
+	protected void assertLegacyMapperCompatibility(Object o) {
+
+		Map hash1 = legacyMapper.toHash(o);
+		assertThat(mapper.fromHash(hash1)).isEqualTo(o);
+
+		Map hash2 = mapper.toHash(o);
+		assertThat(legacyMapper.fromHash(hash2)).isEqualTo(o);
 	}
 
 	@Test // DATAREDIS-423
@@ -256,8 +276,8 @@ public abstract class Jackson3HashMapperUnitTests extends AbstractHashMapperTest
 			}
 
 			return Objects.equals(this.getObjects(), that.getObjects())
-				&& Objects.equals(this.getPersons(), that.getPersons())
-				&& Objects.equals(this.getStrings(), that.getStrings());
+					&& Objects.equals(this.getPersons(), that.getPersons())
+					&& Objects.equals(this.getStrings(), that.getStrings());
 		}
 
 		@Override
@@ -308,8 +328,8 @@ public abstract class Jackson3HashMapperUnitTests extends AbstractHashMapperTest
 			}
 
 			return Objects.equals(this.getObjects(), that.getObjects())
-				&& Objects.equals(this.getPersons(), that.getPersons())
-				&& Objects.equals(this.getStrings(), that.getStrings());
+					&& Objects.equals(this.getPersons(), that.getPersons())
+					&& Objects.equals(this.getStrings(), that.getStrings());
 		}
 
 		@Override
@@ -378,10 +398,9 @@ public abstract class Jackson3HashMapperUnitTests extends AbstractHashMapperTest
 			}
 
 			return Objects.equals(this.getString(), that.getString())
-				&& Objects.equals(this.getCalendar(), that.getCalendar())
-				&& Objects.equals(this.getDate(), that.getDate())
-				&& Objects.equals(this.getLocalDate(), that.getLocalDate())
-				&& Objects.equals(this.getLocalDateTime(), that.getLocalDateTime());
+					&& Objects.equals(this.getCalendar(), that.getCalendar()) && Objects.equals(this.getDate(), that.getDate())
+					&& Objects.equals(this.getLocalDate(), that.getLocalDate())
+					&& Objects.equals(this.getLocalDateTime(), that.getLocalDateTime());
 		}
 
 		@Override
@@ -391,13 +410,8 @@ public abstract class Jackson3HashMapperUnitTests extends AbstractHashMapperTest
 
 		@Override
 		public String toString() {
-			return "WithDates{" +
-				"string='" + string + '\'' +
-				", date=" + date +
-				", calendar=" + calendar +
-				", localDate=" + localDate +
-				", localDateTime=" + localDateTime +
-				'}';
+			return "WithDates{" + "string='" + string + '\'' + ", date=" + date + ", calendar=" + calendar + ", localDate="
+					+ localDate + ", localDateTime=" + localDateTime + '}';
 		}
 	}
 
@@ -433,8 +447,7 @@ public abstract class Jackson3HashMapperUnitTests extends AbstractHashMapperTest
 				return false;
 			}
 
-			return Objects.equals(this.getBigD(), that.getBigD())
-				&& Objects.equals(this.getBigI(), that.getBigI());
+			return Objects.equals(this.getBigD(), that.getBigD()) && Objects.equals(this.getBigI(), that.getBigI());
 		}
 
 		@Override
