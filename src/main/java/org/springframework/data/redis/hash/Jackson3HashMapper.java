@@ -160,6 +160,7 @@ public class Jackson3HashMapper implements HashMapper<Object, String, Object> {
 			Jackson3HashMapper.class.getClassLoader());
 
 	private final ObjectMapper typingMapper;
+	private final ObjectMapper untypedMapper;
 	private final boolean flatten;
 
 	public Jackson3HashMapper(
@@ -178,6 +179,7 @@ public class Jackson3HashMapper implements HashMapper<Object, String, Object> {
 						.allowIfSubType((ctx, clazz) -> true).build(), DefaultTyping.NON_FINAL_AND_ENUMS, "@class")
 				.configure(DeserializationFeature.FAIL_ON_MISSING_EXTERNAL_TYPE_ID_PROPERTY, false)
 				.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+			//.configure(DeserializationFeature., false)
 				.changeDefaultPropertyInclusion(value -> value.withValueInclusion(Include.NON_NULL));
 	}
 
@@ -195,6 +197,7 @@ public class Jackson3HashMapper implements HashMapper<Object, String, Object> {
 
 		this.flatten = flatten;
 		this.typingMapper = mapper;
+		this.untypedMapper = mapper.rebuild().deactivateDefaultTyping().build();
 	}
 
 	@Override
@@ -202,7 +205,7 @@ public class Jackson3HashMapper implements HashMapper<Object, String, Object> {
 	public Map<String, Object> toHash(Object source) {
 
 		JsonNode tree = this.typingMapper.valueToTree(source);
-		return this.flatten ? flattenMap(tree.properties()) : JsonMapper.shared().convertValue(tree, Map.class);
+		return this.flatten ? flattenMap(tree.properties()) : this.untypedMapper.convertValue(tree, Map.class);
 	}
 
 	@Override
@@ -213,13 +216,14 @@ public class Jackson3HashMapper implements HashMapper<Object, String, Object> {
 			if (this.flatten) {
 
 				Map<String, Object> unflattenedHash = doUnflatten(hash);
-				byte[] unflattenedHashedBytes = JsonMapper.shared().writeValueAsBytes(unflattenedHash);
+				System.out.println("unflat: " + unflattenedHash);
+				byte[] unflattenedHashedBytes = this.untypedMapper.writeValueAsBytes(unflattenedHash);
 				Object hashedObject = this.typingMapper.reader().forType(Object.class).readValue(unflattenedHashedBytes);
 
 				return hashedObject;
 			}
 
-			return this.typingMapper.treeToValue(JsonMapper.shared().valueToTree(hash), Object.class);
+			return this.typingMapper.treeToValue(this.untypedMapper.valueToTree(hash), Object.class);
 
 		} catch (Exception ex) {
 			throw new MappingException(ex.getMessage(), ex);

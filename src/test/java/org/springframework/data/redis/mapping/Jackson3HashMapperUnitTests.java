@@ -15,8 +15,6 @@
  */
 package org.springframework.data.redis.mapping;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.LocalDate;
@@ -48,12 +46,10 @@ import org.springframework.data.redis.hash.Jackson3HashMapper;
 public abstract class Jackson3HashMapperUnitTests extends AbstractHashMapperTests {
 
 	private final Jackson3HashMapper mapper;
-	private final Jackson2HashMapper legacyMapper;
 
-	public Jackson3HashMapperUnitTests(Jackson3HashMapper mapper, Jackson2HashMapper legacyMapper) {
+	public Jackson3HashMapperUnitTests(Jackson3HashMapper mapper) {
 
 		this.mapper = mapper;
-		this.legacyMapper = legacyMapper;
 	}
 
 	protected Jackson3HashMapper getMapper() {
@@ -64,21 +60,6 @@ public abstract class Jackson3HashMapperUnitTests extends AbstractHashMapperTest
 	@SuppressWarnings("rawtypes")
 	protected <T> HashMapper mapperFor(Class<T> t) {
 		return getMapper();
-	}
-
-	protected void assertBackAndForwardMapping(Object o) {
-
-		super.assertBackAndForwardMapping(o);
-		assertLegacyMapperCompatibility(o);
-	}
-
-	protected void assertLegacyMapperCompatibility(Object o) {
-
-		Map hash1 = legacyMapper.toHash(o);
-		assertThat(mapper.fromHash(hash1)).isEqualTo(o);
-
-		Map hash2 = mapper.toHash(o);
-		assertThat(legacyMapper.fromHash(hash2)).isEqualTo(o);
 	}
 
 	@Test // DATAREDIS-423

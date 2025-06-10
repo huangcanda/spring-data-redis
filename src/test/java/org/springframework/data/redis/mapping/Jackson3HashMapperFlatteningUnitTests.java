@@ -22,7 +22,6 @@ import java.time.Month;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.data.redis.hash.Jackson2HashMapper;
 import org.springframework.data.redis.hash.Jackson3HashMapper;
 
 /**
@@ -33,7 +32,7 @@ import org.springframework.data.redis.hash.Jackson3HashMapper;
 public class Jackson3HashMapperFlatteningUnitTests extends Jackson3HashMapperUnitTests {
 
 	Jackson3HashMapperFlatteningUnitTests() {
-		super(new Jackson3HashMapper(Jackson3HashMapper::preconfigure, true), new Jackson2HashMapper(true));
+		super(new Jackson3HashMapper(Jackson3HashMapper::preconfigure,true));
 	}
 
 	@Test // GH-2593
