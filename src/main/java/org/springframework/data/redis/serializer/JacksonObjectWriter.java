@@ -28,8 +28,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  *
  * @author Mark Paluch
  * @since 3.0
+ * @deprecated since 4.0 in favor of {@link Jackson3ObjectWriter}.
  */
 @FunctionalInterface
+@Deprecated(since = "4.0", forRemoval = true)
 public interface JacksonObjectWriter {
 
 	/**

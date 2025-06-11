@@ -40,7 +40,9 @@ import com.fasterxml.jackson.databind.type.TypeFactory;
  * @author Thomas Darimont
  * @author Mark Paluch
  * @since 1.2
+ * @deprecated since 4.0 in favor of {@link Jackson3JsonRedisSerializer}.
  */
+@Deprecated(since = "4.0", forRemoval = true)
 public class Jackson2JsonRedisSerializer<T> implements RedisSerializer<T> {
 
 	/**

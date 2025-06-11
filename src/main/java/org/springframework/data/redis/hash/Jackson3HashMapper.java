@@ -70,7 +70,6 @@ import java.util.function.Supplier;
 import org.springframework.data.mapping.MappingException;
 import org.springframework.data.redis.support.collections.CollectionUtils;
 import org.springframework.data.util.DirectFieldAccessFallbackBeanWrapper;
-import org.springframework.lang.NonNull;
 import org.springframework.util.Assert;
 import org.springframework.util.ClassUtils;
 import org.springframework.util.StringUtils;
@@ -161,9 +160,7 @@ import com.fasterxml.jackson.annotation.JsonInclude.Include;
  * </table>
  *
  * @author Christoph Strobl
- * @author Mark Paluch
- * @author John Blum
- * @since 1.8
+ * @since 4.0
  */
 public class Jackson3HashMapper implements HashMapper<Object, String, Object> {
 
@@ -301,23 +298,23 @@ public class Jackson3HashMapper implements HashMapper<Object, String, Object> {
 		return result;
 	}
 
-	private boolean isIndexed(@NonNull String value) {
+	private boolean isIndexed(String value) {
 		return value.indexOf('[') > -1;
 	}
 
-	private boolean isNotIndexed(@NonNull String value) {
+	private boolean isNotIndexed(String value) {
 		return !isIndexed(value);
 	}
 
-	private boolean isNonNestedIndexed(@NonNull String value) {
+	private boolean isNonNestedIndexed(String value) {
 		return value.endsWith("]");
 	}
 
-	private int getIndex(@NonNull String indexedValue) {
+	private int getIndex(String indexedValue) {
 		return Integer.parseInt(indexedValue.substring(indexedValue.indexOf('[') + 1, indexedValue.length() - 1));
 	}
 
-	private @NonNull String stripIndex(@NonNull String indexedValue) {
+	private String stripIndex(String indexedValue) {
 
 		int indexOfLeftBracket = indexedValue.indexOf("[");
 
@@ -337,7 +334,7 @@ public class Jackson3HashMapper implements HashMapper<Object, String, Object> {
 			propertyPrefix = propertyPrefix + ".";
 		}
 
-		for(Entry<String, JsonNode> entry : inputMap) {
+		for (Entry<String, JsonNode> entry : inputMap) {
 			flattenElement(propertyPrefix + entry.getKey(), entry.getValue(), resultMap);
 		}
 	}
