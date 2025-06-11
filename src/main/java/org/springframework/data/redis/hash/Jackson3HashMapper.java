@@ -30,21 +30,32 @@ import tools.jackson.databind.ValueDeserializer;
 import tools.jackson.databind.ValueSerializer;
 import tools.jackson.databind.cfg.MapperBuilder;
 import tools.jackson.databind.deser.jdk.JavaUtilCalendarDeserializer;
+import tools.jackson.databind.deser.jdk.JavaUtilDateDeserializer;
+import tools.jackson.databind.deser.jdk.NumberDeserializers.BigDecimalDeserializer;
+import tools.jackson.databind.deser.jdk.NumberDeserializers.BigIntegerDeserializer;
+import tools.jackson.databind.deser.std.StdDeserializer;
+import tools.jackson.databind.exc.MismatchedInputException;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.json.JsonMapper.Builder;
 import tools.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
+import tools.jackson.databind.jsontype.TypeDeserializer;
+import tools.jackson.databind.jsontype.TypeSerializer;
+import tools.jackson.databind.jsontype.impl.AsPropertyTypeDeserializer;
 import tools.jackson.databind.module.SimpleDeserializers;
 import tools.jackson.databind.module.SimpleSerializers;
 import tools.jackson.databind.ser.Serializers;
 import tools.jackson.databind.ser.jdk.JavaUtilCalendarSerializer;
 import tools.jackson.databind.ser.jdk.JavaUtilDateSerializer;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
+import java.util.Collection;
 import java.util.Collections;
-import java.util.GregorianCalendar;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -176,10 +187,9 @@ public class Jackson3HashMapper implements HashMapper<Object, String, Object> {
 	public static void preconfigure(MapperBuilder<? extends ObjectMapper, ? extends MapperBuilder<?, ?>> builder) {
 		builder.findAndAddModules().addModules(new HashMapperModule())
 				.activateDefaultTypingAsProperty(BasicPolymorphicTypeValidator.builder().allowIfBaseType(Object.class)
-						.allowIfSubType((ctx, clazz) -> true).build(), DefaultTyping.NON_FINAL_AND_ENUMS, "@class")
+						.allowIfSubType((ctx, clazz) -> true).build(), DefaultTyping.NON_FINAL, "@class")
 				.configure(DeserializationFeature.FAIL_ON_MISSING_EXTERNAL_TYPE_ID_PROPERTY, false)
 				.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-			//.configure(DeserializationFeature., false)
 				.changeDefaultPropertyInclusion(value -> value.withValueInclusion(Include.NON_NULL));
 	}
 
@@ -197,7 +207,7 @@ public class Jackson3HashMapper implements HashMapper<Object, String, Object> {
 
 		this.flatten = flatten;
 		this.typingMapper = mapper;
-		this.untypedMapper = mapper.rebuild().deactivateDefaultTyping().build();
+		this.untypedMapper = JsonMapper.shared();
 	}
 
 	@Override
@@ -216,7 +226,6 @@ public class Jackson3HashMapper implements HashMapper<Object, String, Object> {
 			if (this.flatten) {
 
 				Map<String, Object> unflattenedHash = doUnflatten(hash);
-				System.out.println("unflat: " + unflattenedHash);
 				byte[] unflattenedHashedBytes = this.untypedMapper.writeValueAsBytes(unflattenedHash);
 				Object hashedObject = this.typingMapper.reader().forType(Object.class).readValue(unflattenedHashedBytes);
 
@@ -328,9 +337,7 @@ public class Jackson3HashMapper implements HashMapper<Object, String, Object> {
 			propertyPrefix = propertyPrefix + ".";
 		}
 
-		Iterator<Entry<String, JsonNode>> entries = inputMap.iterator();
-		while (entries.hasNext()) {
-			Entry<String, JsonNode> entry = entries.next();
+		for(Entry<String, JsonNode> entry : inputMap) {
 			flattenElement(propertyPrefix + entry.getKey(), entry.getValue(), resultMap);
 		}
 	}
@@ -351,24 +358,24 @@ public class Jackson3HashMapper implements HashMapper<Object, String, Object> {
 				JsonNode currentNode = nodes.next();
 
 				if (currentNode.isArray()) {
-					flattenCollection(propertyPrefix, currentNode.values().iterator(), resultMap);
+					flattenCollection(propertyPrefix, currentNode.values(), resultMap);
 				} else if (nodes.hasNext() && mightBeJavaType(currentNode)) {
 
 					JsonNode next = nodes.next();
 
 					if (next.isArray()) {
-						flattenCollection(propertyPrefix, next.values().iterator(), resultMap);
+						flattenCollection(propertyPrefix, next.values(), resultMap);
 					}
-					if (currentNode.asText().equals("java.util.Date")) {
-						resultMap.put(propertyPrefix, next.asText());
+					if (currentNode.asString().equals("java.util.Date")) {
+						resultMap.put(propertyPrefix, next.asString());
 						break;
 					}
 					if (next.isNumber()) {
 						resultMap.put(propertyPrefix, next.numberValue());
 						break;
 					}
-					if (next.isTextual()) {
-						resultMap.put(propertyPrefix, next.textValue());
+					if (next.isString()) {
+						resultMap.put(propertyPrefix, next.stringValue());
 						break;
 					}
 					if (next.isBoolean()) {
@@ -392,7 +399,7 @@ public class Jackson3HashMapper implements HashMapper<Object, String, Object> {
 		} else {
 
 			switch (element.getNodeType()) {
-				case STRING -> resultMap.put(propertyPrefix, element.textValue());
+				case STRING -> resultMap.put(propertyPrefix, element.stringValue());
 				case NUMBER -> resultMap.put(propertyPrefix, element.numberValue());
 				case BOOLEAN -> resultMap.put(propertyPrefix, element.booleanValue());
 				case BINARY -> {
@@ -410,7 +417,7 @@ public class Jackson3HashMapper implements HashMapper<Object, String, Object> {
 
 	private boolean mightBeJavaType(JsonNode node) {
 
-		String textValue = node.asText();
+		String textValue = node.asString();
 
 		if (!SOURCE_VERSION_PRESENT) {
 			return Arrays.asList("java.util.Date", "java.math.BigInteger", "java.math.BigDecimal").contains(textValue);
@@ -419,10 +426,11 @@ public class Jackson3HashMapper implements HashMapper<Object, String, Object> {
 		return javax.lang.model.SourceVersion.isName(textValue);
 	}
 
-	private void flattenCollection(String propertyPrefix, Iterator<JsonNode> list, Map<String, Object> resultMap) {
+	private void flattenCollection(String propertyPrefix, Collection<JsonNode> list, Map<String, Object> resultMap) {
 
-		for (int counter = 0; list.hasNext(); counter++) {
-			JsonNode element = list.next();
+		Iterator<JsonNode> iterator = list.iterator();
+		for (int counter = 0; iterator.hasNext(); counter++) {
+			JsonNode element = iterator.next();
 			flattenElement(propertyPrefix + "[" + counter + "]", element, resultMap);
 		}
 	}
@@ -473,38 +481,96 @@ public class Jackson3HashMapper implements HashMapper<Object, String, Object> {
 		public void setupModule(SetupContext context) {
 
 			List<ValueSerializer<?>> valueSerializers = new ArrayList<>();
-			valueSerializers.add(new JavaUtilDateSerializer(true, null));
+			valueSerializers.add(new JavaUtilDateSerializer(true, null) {
+				@Override
+				public void serializeWithType(Date value, JsonGenerator g, SerializationContext ctxt, TypeSerializer typeSer)
+						throws JacksonException {
+					serialize(value, g, ctxt);
+				}
+			});
 			valueSerializers.add(new UTCCalendarSerializer());
 
 			Serializers serializers = new SimpleSerializers(valueSerializers);
 			context.addSerializers(serializers);
 
 			Map<Class<?>, ValueDeserializer<?>> valueDeserializers = new LinkedHashMap<>();
-			valueDeserializers.put(GregorianCalendar.class, new UTCCalendarDeserializer());
+			valueDeserializers.put(java.util.Calendar.class,
+					new UntypedFallbackDeserializer<>(new UntypedUTCCalendarDeserializer()));
+			valueDeserializers.put(java.util.Date.class, new UntypedFallbackDeserializer<>(new JavaUtilDateDeserializer()));
+			valueDeserializers.put(BigInteger.class, new UntypedFallbackDeserializer<>(new BigIntegerDeserializer()));
+			valueDeserializers.put(BigDecimal.class, new UntypedFallbackDeserializer<>(new BigDecimalDeserializer()));
 
 			context.addDeserializers(new SimpleDeserializers(valueDeserializers));
+		}
+
+	}
+
+	static class UntypedFallbackDeserializer<T> extends StdDeserializer<T> {
+
+		private final StdDeserializer<?> delegate;
+
+		protected UntypedFallbackDeserializer(StdDeserializer<?> delegate) {
+			super(Object.class);
+			this.delegate = delegate;
+		}
+
+		@Override
+		public Object deserializeWithType(JsonParser p, DeserializationContext ctxt, TypeDeserializer typeDeserializer)
+				throws JacksonException {
+
+			if (!(typeDeserializer instanceof AsPropertyTypeDeserializer asPropertySerializer)) {
+				return super.deserializeWithType(p, ctxt, typeDeserializer);
+			}
+
+			try {
+				return super.deserializeWithType(p, ctxt, typeDeserializer);
+			} catch (MismatchedInputException e) {
+				if (!asPropertySerializer.baseType().isTypeOrSuperTypeOf(delegate.handledType())) {
+					throw e;
+				}
+			}
+
+			return deserialize(p, ctxt);
+
+		}
+
+		@Override
+		@SuppressWarnings("unchecked")
+		public T deserialize(JsonParser p, DeserializationContext ctxt) throws JacksonException {
+			return (T) delegate.deserialize(p, ctxt);
 		}
 	}
 
 	static class UTCCalendarSerializer extends JavaUtilCalendarSerializer {
+
+		private static final TimeZone UTC = TimeZone.getTimeZone("UTC");
 
 		@Override
 		public void serialize(Calendar value, JsonGenerator g, SerializationContext provider) throws JacksonException {
 
 			Calendar utc = Calendar.getInstance();
 			utc.setTimeInMillis(value.getTimeInMillis());
-			utc.setTimeZone(TimeZone.getTimeZone("UTC"));
+			utc.setTimeZone(UTC);
 			super.serialize(utc, g, provider);
+		}
+
+		@Override
+		public void serializeWithType(Calendar value, JsonGenerator g, SerializationContext ctxt, TypeSerializer typeSer)
+				throws JacksonException {
+			serialize(value, g, ctxt);
 		}
 	}
 
-	static class UTCCalendarDeserializer extends JavaUtilCalendarDeserializer {
+	static class UntypedUTCCalendarDeserializer extends JavaUtilCalendarDeserializer {
+
+		private static final TimeZone UTC = TimeZone.getTimeZone("UTC");
+
 		@Override
 		public Calendar deserialize(JsonParser p, DeserializationContext ctxt) throws JacksonException {
 
 			Calendar cal = super.deserialize(p, ctxt);
 
-			Calendar utc = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
+			Calendar utc = Calendar.getInstance(UTC);
 			utc.setTimeInMillis(cal.getTimeInMillis());
 			utc.setTimeZone(TimeZone.getTimeZone(ZoneId.systemDefault()));
 
